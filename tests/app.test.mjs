@@ -178,3 +178,105 @@ test('seat status changes control runway freeze state', () => {
     status: 'deactivated'
   }).runwayFrozen, false);
 });
+
+
+test('workspace policies, audit logs, and persistence recovery work end to end', async () => {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'runwayos-'));
+  const dbFile = path.join(tmpDir, 'db.json');
+  const store = new JsonRunwayStore(dbFile);
+  await store.load();
+  const app = createRunwayApp({ store, webhookSecret: 'secret', clock: () => Date.now() });
+  const { port, close } = await startServer(app);
+
+  try {
+    const seeded = await fetch(`http://127.0.0.1:${port}/api/workspaces/acme/offboarding/seats`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        employeeEmail: 'sam.ira@stackaudit.io',
+        platformName: 'zoom',
+        status: 'active',
+        monthlyCost: 29,
+        currency: 'usd'
+      })
+    });
+    assert.equal(seeded.status, 200);
+
+    const policyUpdate = await fetch(`http://127.0.0.1:${port}/api/workspaces/acme/policies`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ approvalRequired: true, manualOverrideEnabled: false })
+    });
+    assert.equal(policyUpdate.status, 200);
+
+    const blocked = await fetch(`http://127.0.0.1:${port}/api/workspaces/acme/offboarding/seats`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        employeeEmail: 'sam.ira@stackaudit.io',
+        platformName: 'zoom',
+        status: 'deactivated'
+      })
+    });
+    assert.equal(blocked.status, 422);
+
+    const approved = await fetch(`http://127.0.0.1:${port}/api/workspaces/acme/offboarding/actions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        action: 'approve',
+        actor: 'operator-1',
+        employeeEmail: 'sam.ira@stackaudit.io',
+        platformName: 'zoom',
+        monthlyCost: 29,
+        currency: 'USD'
+      })
+    });
+    assert.equal(approved.status, 200);
+    const approvedJson = await approved.json();
+    assert.equal(approvedJson.seat.status, 'pending_removal');
+
+    const reconciled = await fetch(`http://127.0.0.1:${port}/api/workspaces/acme/offboarding/actions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        action: 'reconcile',
+        actor: 'operator-1',
+        employeeEmail: 'sam.ira@stackaudit.io',
+        platformName: 'zoom',
+        status: 'deactivated',
+        monthlyCost: 29,
+        currency: 'USD',
+        reason: 'provider confirmed deprovisioned'
+      })
+    });
+    assert.equal(reconciled.status, 200);
+
+    const summary = await fetch(`http://127.0.0.1:${port}/api/workspaces/acme/summary`);
+    assert.equal(summary.status, 200);
+    const summaryJson = await summary.json();
+    assert.equal(summaryJson.summary.recoveredMonthly, 29);
+    assert.equal(summaryJson.summary.statusCounts.deactivated, 1);
+
+    const auditLog = await fetch(`http://127.0.0.1:${port}/api/workspaces/acme/audit-log`);
+    assert.equal(auditLog.status, 200);
+    const auditJson = await auditLog.json();
+    assert.ok(auditJson.auditLog.some((entry) => entry.type === 'policy_updated'));
+    assert.ok(auditJson.auditLog.some((entry) => entry.type === 'seat_reconciled'));
+
+    const seats = await fetch(`http://127.0.0.1:${port}/api/workspaces/acme/offboarding/seats`);
+    assert.equal(seats.status, 200);
+    const seatsJson = await seats.json();
+    assert.equal(seatsJson.seats[0].status, 'deactivated');
+
+    await close();
+
+    const recoveredStore = new JsonRunwayStore(dbFile);
+    await recoveredStore.load();
+    assert.equal(recoveredStore.getSeat('acme', 'sam.ira@stackaudit.io', 'zoom').status, 'deactivated');
+    assert.equal(recoveredStore.summarizeWorkspace('acme').recoveredMonthly, 29);
+    assert.ok(recoveredStore.listAuditEvents('acme').length >= 3);
+  } finally {
+    await close().catch(() => {});
+  }
+});

@@ -1,18 +1,27 @@
 openapi: 3.0.3
 info:
   title: RunwayOS Fleet & Offboarding API
-  version: 1.1.0
-  description: Multi-tenant endpoints managing cross-platform seat tracking, cryptographic webhooks, and runway recalculations.
+  version: 1.2.0
+  description: Multi-tenant endpoints for seat tracking, policy controls, audit logs, and runway recalculations.
 paths:
   /api/workspaces/{id}/offboarding/seats:
-    patch:
-      summary: Mutate individual software seat deprovisioning status
-      description: Updates a targeted seat's status row and evaluates if the parent employee record should trigger a global workspace runway calculation unfreeze.
+    get:
+      summary: List tracked offboarding seats
       parameters:
         - name: id
           in: path
           required: true
-          description: Unique identifier of the target workspace
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Seat collection and workspace summary.
+    patch:
+      summary: Mutate individual software seat deprovisioning status
+      parameters:
+        - name: id
+          in: path
+          required: true
           schema:
             type: string
       requestBody:
@@ -21,41 +30,113 @@ paths:
           application/json:
             schema:
               type: object
-              required:
-                - employeeEmail
-                - platformName
-                - status
+              required: [employeeEmail, platformName, status]
               properties:
                 employeeEmail:
                   type: string
                   format: email
-                  example: alex.chen@stackaudit.io
                 platformName:
                   type: string
-                  enum: [slack, google_workspace, github, jira, notion, figma]
-                  example: slack
+                  enum: [slack, google_workspace, github, jira, notion, figma, microsoft_365, okta, asana, linear, zoom]
                 status:
                   type: string
                   enum: [active, pending_removal, deactivated]
-                  example: deactivated
+                monthlyCost:
+                  type: number
+                  minimum: 0
+                currency:
+                  type: string
+                  example: USD
       responses:
         '200':
           description: Database row mutated successfully.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: success
-                  message:
-                    type: string
-                    example: Seat for slack updated to deactivated.
-                  runwayUnfrozen:
-                    type: boolean
-                    example: true
         '401':
           description: Cryptographic signature mismatch or unauthorized payload.
+        '422':
+          description: Validation error.
         '500':
           description: Database update execution error.
+  /api/workspaces/{id}/offboarding/actions:
+    post:
+      summary: Apply approval, reconciliation, or manual override actions
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, employeeEmail, platformName]
+              properties:
+                action:
+                  type: string
+                  enum: [approve, reconcile, override]
+                employeeEmail:
+                  type: string
+                  format: email
+                platformName:
+                  type: string
+                status:
+                  type: string
+                  enum: [active, pending_removal, deactivated]
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Lifecycle action applied successfully.
+        '422':
+          description: Validation error.
+  /api/workspaces/{id}/policies:
+    patch:
+      summary: Update workspace policy controls
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                approvalRequired:
+                  type: boolean
+                autoReconcile:
+                  type: boolean
+                manualOverrideEnabled:
+                  type: boolean
+      responses:
+        '200':
+          description: Policy updated successfully.
+  /api/workspaces/{id}/summary:
+    get:
+      summary: Return runway recovery summary metrics
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Workspace summary.
+  /api/workspaces/{id}/audit-log:
+    get:
+      summary: Return the audit trail for a workspace
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Audit log entries.
