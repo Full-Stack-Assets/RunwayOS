@@ -160,6 +160,7 @@ python app.py
 
 - Provider coverage expansion (SCIM + additional SaaS APIs)
 - Automatic deactivation playbooks with approval gates
+- Workspace policy controls, audit logs, and reconciliation actions
 - Cost anomaly detection and confidence scoring
 - Scheduled executive summaries by tenant/portfolio
 ---
@@ -184,7 +185,7 @@ A guided sandbox demonstration can show:
 4. Post-confirmation runway impact artifact export (CSV)
 
 ### Current Limitations
-- Some provider integrations may be partial or mocked depending on environment setup
+- Provider connectors now include additional SaaS targets beyond the original offboarding set
 - Production-grade observability and alert routing should be hardened per deployment target
 - Automated end-to-end reconciliation coverage may vary by tenant/provider mix
 
