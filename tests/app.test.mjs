@@ -278,3 +278,39 @@ test('workspace policies, audit logs, and persistence recovery work end to end',
     await close();
   }
 });
+
+test('workspace export returns finance-ready csv output', async () => {
+  const store = createInMemoryStore();
+  store.upsertSeat('acme', {
+    employeeEmail: 'zoe.park@stackaudit.io',
+    platformName: 'notion',
+    status: 'deactivated',
+    monthlyCost: 15,
+    currency: 'USD',
+    notes: 'quarterly review, "approved"'
+  });
+  store.upsertSeat('acme', {
+    employeeEmail: 'alex.chen@stackaudit.io',
+    platformName: 'slack',
+    status: 'pending_removal',
+    monthlyCost: 12.5
+  });
+
+  const app = createRunwayApp({ store, webhookSecret: 'secret', clock: () => Date.now() });
+  const { port, close } = await startServer(app);
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/workspaces/acme/offboarding/export`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'text/csv; charset=utf-8');
+    assert.equal(response.headers.get('content-disposition'), 'attachment; filename="runwayos-acme-export.csv"');
+
+    const csv = await response.text();
+    const lines = csv.trimEnd().split('\n');
+    assert.equal(lines[0], 'workspaceId,employeeEmail,platformName,status,source,monthlyCost,currency,notes,updatedAt');
+    assert.match(lines[1], /^acme,alex\.chen@stackaudit\.io,slack,pending_removal,api,12\.5,,,\d{4}-\d{2}-\d{2}T/);
+    assert.match(lines[2], /^acme,zoe\.park@stackaudit\.io,notion,deactivated,api,15,USD,"quarterly review, ""approved""",\d{4}-\d{2}-\d{2}T/);
+  } finally {
+    await close();
+  }
+});

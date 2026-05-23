@@ -15,8 +15,11 @@ const SUPPORTED_ROUTE_TYPES = [
   'lifecycle-action',
   'audit-log',
   'summary',
+  'export',
   'webhook'
 ];
+const CSV_SPECIAL_CHARS_PATTERN = /[",\n\r]/;
+const CSV_EDGE_SPACE_PATTERN = /^\s|\s$/;
 
 function jsonResponse(statusCode, body) {
   return {
@@ -24,6 +27,42 @@ function jsonResponse(statusCode, body) {
     headers: { 'content-type': 'application/json; charset=utf-8' },
     body: `${JSON.stringify(body)}\n`
   };
+}
+
+function csvResponse(body, filename) {
+  return {
+    statusCode: 200,
+    headers: {
+      'content-type': 'text/csv; charset=utf-8',
+      'content-disposition': `attachment; filename="${filename}"`
+    },
+    body
+  };
+}
+
+function csvCell(value) {
+  const text = value === null || value === undefined ? '' : String(value);
+  if (CSV_SPECIAL_CHARS_PATTERN.test(text) || CSV_EDGE_SPACE_PATTERN.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
+function serializeCsv(rows) {
+  return rows.map((row) => row.map(csvCell).join(',')).join('\n') + '\n';
+}
+
+function compareSeatExportEntries(left, right) {
+  // The store normally persists complete seat records, but this keeps list and export
+  // stable if a workspace contains legacy or manually seeded partial rows.
+  const leftEmail = left.employeeEmail ?? '';
+  const rightEmail = right.employeeEmail ?? '';
+  const emailComparison = leftEmail.localeCompare(rightEmail);
+  if (emailComparison !== 0) {
+    return emailComparison;
+  }
+
+  return (left.platformName ?? '').localeCompare(right.platformName ?? '');
 }
 
 async function readRequestBody(req) {
@@ -59,6 +98,10 @@ function routeMatch(url, method) {
 
   if (hasWorkspacePrefix && parts.length === 5 && parts[3] === 'offboarding' && parts[4] === 'actions' && method === 'POST') {
     return { type: 'lifecycle-action', workspaceId: parts[2] };
+  }
+
+  if (hasWorkspacePrefix && parts.length === 5 && parts[3] === 'offboarding' && parts[4] === 'export' && method === 'GET') {
+    return { type: 'export', workspaceId: parts[2] };
   }
 
   if (method === 'PATCH' && hasWorkspacePrefix && parts.length === 5 && parts[3] === 'offboarding' && parts[4] === 'seats') {
@@ -115,10 +158,7 @@ export function createRunwayApp({ store, webhookSecret, replayWindowSeconds = 30
   }
 
   async function handleSeatList(workspaceId) {
-    const seats = store.listSeats(workspaceId).sort((left, right) => {
-      const emailComparison = left.employeeEmail.localeCompare(right.employeeEmail);
-      return emailComparison !== 0 ? emailComparison : left.platformName.localeCompare(right.platformName);
-    });
+    const seats = store.listSeats(workspaceId).sort(compareSeatExportEntries);
 
     return jsonResponse(200, {
       status: 'success',
@@ -277,6 +317,33 @@ export function createRunwayApp({ store, webhookSecret, replayWindowSeconds = 30
     });
   }
 
+  async function handleExport(workspaceId) {
+    const seats = store.listSeats(workspaceId).sort(compareSeatExportEntries);
+    const rows = [
+      // source records the persisted origin label; legacy rows may leave it blank.
+      ['workspaceId', 'employeeEmail', 'platformName', 'status', 'source', 'monthlyCost', 'currency', 'notes', 'updatedAt']
+    ];
+
+    for (const seat of seats) {
+      rows.push([
+        workspaceId,
+        seat.employeeEmail,
+        seat.platformName,
+        seat.status,
+        seat.source,
+        seat.monthlyCost,
+        seat.currency,
+        seat.notes,
+        seat.updatedAt
+      ]);
+    }
+
+    return csvResponse(
+      serializeCsv(rows),
+      `runwayos-${workspaceId}-export.csv`
+    );
+  }
+
   async function handleRequest(req, res) {
     try {
       const route = routeMatch(req.url, req.method);
@@ -306,6 +373,9 @@ export function createRunwayApp({ store, webhookSecret, replayWindowSeconds = 30
           break;
         case 'summary':
           result = await handleSummary(route.workspaceId);
+          break;
+        case 'export':
+          result = await handleExport(route.workspaceId);
           break;
         case 'webhook':
           result = await handleWebhook(route.workspaceId, rawBody, req.headers);
