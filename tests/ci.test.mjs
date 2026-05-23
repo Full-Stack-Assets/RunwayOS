@@ -5,6 +5,14 @@ import test from 'node:test';
 
 const root = process.cwd();
 
+function getEnumValues(openApi, propertyName) {
+  const pattern = new RegExp(`${propertyName}:\\n(?:[ \\t]+.*\\n)*?[ \\t]+enum: \\[(.*?)\\]`, 'm');
+  const match = openApi.match(pattern);
+
+  assert.ok(match, `Expected to find enum block for ${propertyName}`);
+  return match[1].split(',').map((value) => value.trim());
+}
+
 test('package scripts expose the CI gates', () => {
   const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 
@@ -26,8 +34,8 @@ test('OpenAPI contract keeps the offboarding seat update endpoint', () => {
   const openApi = fs.readFileSync(path.join(root, 'docs', 'openapi-expanded.yaml'), 'utf8');
 
   assert.ok(openApi.includes('/api/workspaces/{id}/offboarding/seats:'));
-  assert.ok(openApi.includes("enum: [slack, google_workspace, github, jira, notion, figma]"));
-  assert.ok(openApi.includes("enum: [active, pending_removal, deactivated]"));
+  assert.deepEqual(getEnumValues(openApi, 'platformName'), ['slack', 'google_workspace', 'github', 'jira', 'notion', 'figma']);
+  assert.deepEqual(getEnumValues(openApi, 'status'), ['active', 'pending_removal', 'deactivated']);
   assert.ok(openApi.includes("'200':"));
   assert.ok(openApi.includes("'401':"));
   assert.ok(openApi.includes("'500':"));

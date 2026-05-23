@@ -22,7 +22,7 @@ function walk(currentPath) {
   const lines = content.split('\n');
 
   lines.forEach((line, index) => {
-    if (/\t+$/.test(line) || / {3,}$/.test(line)) {
+    if (/\t$/.test(line) || / {3,}$/.test(line)) {
       failures.push(`${path.relative(root, currentPath)}:${index + 1} has disallowed trailing whitespace (tabs or 3+ spaces)`);
     }
   });
