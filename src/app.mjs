@@ -50,6 +50,17 @@ function serializeCsv(rows) {
   return `${rows.map((row) => row.map(csvCell).join(',')).join('\n')}\n`;
 }
 
+function compareSeatExportEntries(left, right) {
+  const leftEmail = left.employeeEmail ?? '';
+  const rightEmail = right.employeeEmail ?? '';
+  const emailComparison = leftEmail.localeCompare(rightEmail);
+  if (emailComparison !== 0) {
+    return emailComparison;
+  }
+
+  return (left.platformName ?? '').localeCompare(right.platformName ?? '');
+}
+
 async function readRequestBody(req) {
   const chunks = [];
   for await (const chunk of req) {
@@ -143,10 +154,7 @@ export function createRunwayApp({ store, webhookSecret, replayWindowSeconds = 30
   }
 
   async function handleSeatList(workspaceId) {
-    const seats = store.listSeats(workspaceId).sort((left, right) => {
-      const emailComparison = left.employeeEmail.localeCompare(right.employeeEmail);
-      return emailComparison !== 0 ? emailComparison : left.platformName.localeCompare(right.platformName);
-    });
+    const seats = store.listSeats(workspaceId).sort(compareSeatExportEntries);
 
     return jsonResponse(200, {
       status: 'success',
@@ -307,11 +315,9 @@ export function createRunwayApp({ store, webhookSecret, replayWindowSeconds = 30
 
   async function handleExport(workspaceId) {
     const workspace = store.getWorkspace(workspaceId);
-    const seats = store.listSeats(workspaceId).sort((left, right) => {
-      const emailComparison = left.employeeEmail.localeCompare(right.employeeEmail);
-      return emailComparison !== 0 ? emailComparison : left.platformName.localeCompare(right.platformName);
-    });
+    const seats = store.listSeats(workspaceId).sort(compareSeatExportEntries);
     const rows = [
+      // source identifies whether the seat came from api, webhook, or a lifecycle action.
       ['workspaceId', 'employeeEmail', 'platformName', 'status', 'source', 'monthlyCost', 'currency', 'notes', 'updatedAt']
     ];
 
