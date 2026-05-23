@@ -318,7 +318,6 @@ export function createRunwayApp({ store, webhookSecret, replayWindowSeconds = 30
   }
 
   async function handleExport(workspaceId) {
-    const workspace = store.getWorkspace(workspaceId);
     const seats = store.listSeats(workspaceId).sort(compareSeatExportEntries);
     const rows = [
       // source records the persisted origin label; legacy rows may leave it blank.
