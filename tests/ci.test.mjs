@@ -6,6 +6,10 @@ import { OFFBOARDING_PLATFORM_ENUM, OFFBOARDING_STATUS_ENUM, getEnumValues } fro
 
 const root = process.cwd();
 
+function hasResponseCode(openApi, code) {
+  return new RegExp(`['"]?${code}['"]?:`).test(openApi);
+}
+
 test('package scripts expose the CI gates', () => {
   const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 
@@ -29,7 +33,7 @@ test('OpenAPI contract keeps the offboarding seat update endpoint', () => {
   assert.ok(openApi.includes('/api/workspaces/{id}/offboarding/seats:'));
   assert.deepEqual(getEnumValues(openApi, 'platformName'), OFFBOARDING_PLATFORM_ENUM);
   assert.deepEqual(getEnumValues(openApi, 'status'), OFFBOARDING_STATUS_ENUM);
-  assert.ok(openApi.includes("'200':"));
-  assert.ok(openApi.includes("'401':"));
-  assert.ok(openApi.includes("'500':"));
+  assert.ok(hasResponseCode(openApi, '200'));
+  assert.ok(hasResponseCode(openApi, '401'));
+  assert.ok(hasResponseCode(openApi, '500'));
 });

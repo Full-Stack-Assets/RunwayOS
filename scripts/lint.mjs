@@ -5,8 +5,8 @@ const root = process.cwd();
 const targets = ['README.md', 'docs'];
 const failures = [];
 // Markdown hard breaks use two trailing spaces, so treat 3+ as likely accidental.
-const TRAILING_TAB_PATTERN = /\t$/;
-const EXCESSIVE_TRAILING_SPACES_PATTERN = / {3,}$/;
+const TRAILING_TAB = /\t$/;
+const EXCESSIVE_TRAILING_SPACES = / {3,}$/;
 
 function walk(currentPath) {
   const stat = fs.statSync(currentPath);
@@ -25,7 +25,7 @@ function walk(currentPath) {
   const lines = content.split('\n');
 
   lines.forEach((line, index) => {
-    if (TRAILING_TAB_PATTERN.test(line) || EXCESSIVE_TRAILING_SPACES_PATTERN.test(line)) {
+    if (TRAILING_TAB.test(line) || EXCESSIVE_TRAILING_SPACES.test(line)) {
       failures.push(`${path.relative(root, currentPath)}:${index + 1} has disallowed trailing whitespace (tabs or 3+ spaces)`);
     }
   });
