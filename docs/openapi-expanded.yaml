@@ -1,0 +1,61 @@
+openapi: 3.0.3
+info:
+  title: RunwayOS Fleet & Offboarding API
+  version: 1.1.0
+  description: Multi-tenant endpoints managing cross-platform seat tracking, cryptographic webhooks, and runway recalculations.
+paths:
+  /api/workspaces/{id}/offboarding/seats:
+    patch:
+      summary: Mutate individual software seat deprovisioning status
+      description: Updates a targeted seat's status row and evaluates if the parent employee record should trigger a global workspace runway calculation unfreeze.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Unique identifier of the target workspace
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - employeeEmail
+                - platformName
+                - status
+              properties:
+                employeeEmail:
+                  type: string
+                  format: email
+                  example: alex.chen@stackaudit.io
+                platformName:
+                  type: string
+                  enum: [slack, google_workspace, github, jira, notion, figma]
+                  example: slack
+                status:
+                  type: string
+                  enum: [active, pending_removal, deactivated]
+                  example: deactivated
+      responses:
+        '200':
+          description: Database row mutated successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  message:
+                    type: string
+                    example: Seat for slack updated to deactivated.
+                  runwayUnfrozen:
+                    type: boolean
+                    example: true
+        '401':
+          description: Cryptographic signature mismatch or unauthorized payload.
+        '500':
+          description: Database update execution error.
