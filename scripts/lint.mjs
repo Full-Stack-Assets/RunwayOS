@@ -4,6 +4,7 @@ import path from 'node:path';
 const root = process.cwd();
 const targets = ['README.md', 'docs'];
 const failures = [];
+// Markdown hard breaks use two trailing spaces, so treat 3+ as likely accidental.
 const TRAILING_TAB_PATTERN = /\t$/;
 const EXCESSIVE_TRAILING_SPACES_PATTERN = / {3,}$/;
 
