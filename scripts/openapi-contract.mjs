@@ -6,5 +6,7 @@ export function getEnumValues(openApi, propertyName) {
   const pattern = new RegExp(`${escapedProperty}:\\r?\\n(?:[ \\t]+.*\\r?\\n)*?[ \\t]+enum: \\[(.*?)\\]`, 'm');
   const match = openApi.match(pattern);
 
-  return match ? match[1].split(',').map((value) => value.trim()) : null;
+  return match
+    ? match[1].split(',').map((value) => value.trim().replace(/^['"]|['"]$/g, ''))
+    : null;
 }

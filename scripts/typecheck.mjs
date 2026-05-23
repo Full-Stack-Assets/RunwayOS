@@ -33,7 +33,7 @@ for (const [label, values] of [
   ['status', OFFBOARDING_STATUS_ENUM]
 ]) {
   const actualValues = getEnumValues(content, label);
-  if (!actualValues || actualValues.join(',') !== values.join(',')) {
+  if (!actualValues || JSON.stringify(actualValues) !== JSON.stringify(values)) {
     console.error(`Missing required OpenAPI enum for ${label}: [${values.join(', ')}]`);
     process.exit(1);
   }
