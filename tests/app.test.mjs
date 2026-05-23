@@ -106,7 +106,7 @@ test('webhook ingestion verifies signatures and deduplicates replayed events', a
 
     assert.equal(first.status, 200);
     const firstJson = await first.json();
-    assert.equal(firstJson.replayed, true);
+    assert.equal(firstJson.replayed, false);
     assert.equal(firstJson.seat.status, 'pending_removal');
 
     const replay = await fetch(`http://127.0.0.1:${port}/api/workspaces/acme/offboarding/webhook`, {
@@ -123,6 +123,7 @@ test('webhook ingestion verifies signatures and deduplicates replayed events', a
     assert.equal(replay.status, 200);
     const replayJson = await replay.json();
     assert.equal(replayJson.eventId, 'evt_1');
+    assert.equal(replayJson.replayed, true);
 
     const wrongSignature = await fetch(`http://127.0.0.1:${port}/api/workspaces/acme/offboarding/webhook`, {
       method: 'POST',
@@ -140,4 +141,3 @@ test('webhook ingestion verifies signatures and deduplicates replayed events', a
     await close();
   }
 });
-
