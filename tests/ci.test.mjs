@@ -2,23 +2,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { OFFBOARDING_PLATFORM_ENUM, OFFBOARDING_STATUS_ENUM } from '../scripts/openapi-contract.mjs';
+import { OFFBOARDING_PLATFORM_ENUM, OFFBOARDING_STATUS_ENUM, getEnumValues } from '../scripts/openapi-contract.mjs';
 
 const root = process.cwd();
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function getEnumValues(openApi, propertyName) {
-  // The OpenAPI document is a small hand-authored YAML contract, so a focused
-  // regex keeps the CI check dependency-free while still validating the shape.
-  const pattern = new RegExp(`${escapeRegExp(propertyName)}:\\n(?:[ \\t]+.*\\n)*?[ \\t]+enum: \\[(.*?)\\]`, 'm');
-  const match = openApi.match(pattern);
-
-  assert.ok(match, `Expected to find enum block for ${propertyName}`);
-  return match[1].split(',').map((value) => value.trim());
-}
 
 test('package scripts expose the CI gates', () => {
   const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { OFFBOARDING_PLATFORM_ENUM, OFFBOARDING_STATUS_ENUM } from './openapi-contract.mjs';
+import { OFFBOARDING_PLATFORM_ENUM, OFFBOARDING_STATUS_ENUM, getEnumValues } from './openapi-contract.mjs';
 
 const root = process.cwd();
 const openApiPath = path.join(root, 'docs', 'openapi-expanded.yaml');
@@ -32,9 +32,9 @@ for (const [label, values] of [
   ['platformName', OFFBOARDING_PLATFORM_ENUM],
   ['status', OFFBOARDING_STATUS_ENUM]
 ]) {
-  const joinedValues = values.join(', ');
-  if (!content.includes(`enum: [${joinedValues}]`)) {
-    console.error(`Missing required OpenAPI enum for ${label}: [${joinedValues}]`);
+  const actualValues = getEnumValues(content, label);
+  if (!actualValues || actualValues.join(',') !== values.join(',')) {
+    console.error(`Missing required OpenAPI enum for ${label}: [${values.join(', ')}]`);
     process.exit(1);
   }
 }
