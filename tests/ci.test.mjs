@@ -5,8 +5,12 @@ import test from 'node:test';
 
 const root = process.cwd();
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function getEnumValues(openApi, propertyName) {
-  const pattern = new RegExp(`${propertyName}:\\n(?:[ \\t]+.*\\n)*?[ \\t]+enum: \\[(.*?)\\]`, 'm');
+  const pattern = new RegExp(`${escapeRegExp(propertyName)}:\\n(?:[ \\t]+.*\\n)*?[ \\t]+enum: \\[(.*?)\\]`, 'm');
   const match = openApi.match(pattern);
 
   assert.ok(match, `Expected to find enum block for ${propertyName}`);

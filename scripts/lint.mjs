@@ -4,6 +4,8 @@ import path from 'node:path';
 const root = process.cwd();
 const targets = ['README.md', 'docs'];
 const failures = [];
+const TRAILING_TAB_PATTERN = /\t$/;
+const EXCESSIVE_TRAILING_SPACES_PATTERN = / {3,}$/;
 
 function walk(currentPath) {
   const stat = fs.statSync(currentPath);
@@ -14,7 +16,7 @@ function walk(currentPath) {
     return;
   }
 
-  if (!/\.(md|ya?ml)$/i.test(currentPath) && path.basename(currentPath) !== 'README.md') {
+  if (!/\.(md|ya?ml)$/i.test(currentPath)) {
     return;
   }
 
@@ -22,7 +24,7 @@ function walk(currentPath) {
   const lines = content.split('\n');
 
   lines.forEach((line, index) => {
-    if (/\t$/.test(line) || / {3,}$/.test(line)) {
+    if (TRAILING_TAB_PATTERN.test(line) || EXCESSIVE_TRAILING_SPACES_PATTERN.test(line)) {
       failures.push(`${path.relative(root, currentPath)}:${index + 1} has disallowed trailing whitespace (tabs or 3+ spaces)`);
     }
   });
