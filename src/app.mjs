@@ -18,6 +18,8 @@ const SUPPORTED_ROUTE_TYPES = [
   'export',
   'webhook'
 ];
+const CSV_SPECIAL_CHARS_PATTERN = /[",\n\r]/;
+const CSV_EDGE_SPACE_PATTERN = /^\s|\s$/;
 
 function jsonResponse(statusCode, body) {
   return {
@@ -40,7 +42,7 @@ function csvResponse(body, filename) {
 
 function csvCell(value) {
   const text = value === null || value === undefined ? '' : String(value);
-  if (/[",\n\r]/.test(text) || /^\s|\s$/.test(text)) {
+  if (CSV_SPECIAL_CHARS_PATTERN.test(text) || CSV_EDGE_SPACE_PATTERN.test(text)) {
     return `"${text.replace(/"/g, '""')}"`;
   }
   return text;
@@ -329,11 +331,11 @@ export function createRunwayApp({ store, webhookSecret, replayWindowSeconds = 30
         seat.employeeEmail,
         seat.platformName,
         seat.status,
-        seat.source ?? '',
-        seat.monthlyCost ?? '',
-        seat.currency ?? '',
-        seat.notes ?? '',
-        seat.updatedAt ?? ''
+        seat.source,
+        seat.monthlyCost,
+        seat.currency,
+        seat.notes,
+        seat.updatedAt
       ]);
     }
 
