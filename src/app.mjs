@@ -8,6 +8,16 @@ import {
   verifyWebhookSignature
 } from './validation.mjs';
 
+const SUPPORTED_ROUTE_TYPES = [
+  'seat-update',
+  'seat-list',
+  'policy-update',
+  'lifecycle-action',
+  'audit-log',
+  'summary',
+  'webhook'
+];
+
 function jsonResponse(statusCode, body) {
   return {
     statusCode,
@@ -105,13 +115,15 @@ export function createRunwayApp({ store, webhookSecret, replayWindowSeconds = 30
   }
 
   async function handleSeatList(workspaceId) {
+    const seats = store.listSeats(workspaceId).sort((left, right) => {
+      const emailComparison = left.employeeEmail.localeCompare(right.employeeEmail);
+      return emailComparison !== 0 ? emailComparison : left.platformName.localeCompare(right.platformName);
+    });
+
     return jsonResponse(200, {
       status: 'success',
       workspaceId,
-      seats: store.listSeats(workspaceId).sort((left, right) => (
-        left.employeeEmail.localeCompare(right.employeeEmail)
-        || left.platformName.localeCompare(right.platformName)
-      )),
+      seats,
       summary: store.summarizeWorkspace(workspaceId),
       policies: store.getPolicies(workspaceId)
     });
@@ -207,9 +219,6 @@ export function createRunwayApp({ store, webhookSecret, replayWindowSeconds = 30
     if (action.action === 'override' && !policies.manualOverrideEnabled) {
       throw new ValidationError('manual overrides are disabled by workspace policy');
     }
-    if (action.action === 'override' && !action.reason) {
-      throw new ValidationError('manual overrides require a reason');
-    }
 
     const nextStatus = action.action === 'approve'
       ? 'pending_removal'
@@ -224,12 +233,13 @@ export function createRunwayApp({ store, webhookSecret, replayWindowSeconds = 30
       notes: action.notes,
       source: action.action
     });
+    const auditTypes = {
+      approve: 'seat_approved',
+      reconcile: 'seat_reconciled',
+      override: 'seat_overridden'
+    };
     store.recordAuditEvent(workspaceId, {
-      type: action.action === 'approve'
-        ? 'seat_approved'
-        : action.action === 'reconcile'
-          ? 'seat_reconciled'
-          : 'seat_overridden',
+      type: auditTypes[action.action],
       actor: action.actor,
       employeeEmail: action.employeeEmail,
       platformName: action.platformName,
@@ -277,19 +287,32 @@ export function createRunwayApp({ store, webhookSecret, replayWindowSeconds = 30
       }
 
       const rawBody = await readRequestBody(req);
-      const result = route.type === 'seat-update'
-        ? await handleSeatUpdate(route.workspaceId, rawBody)
-        : route.type === 'seat-list'
-          ? await handleSeatList(route.workspaceId)
-          : route.type === 'policy-update'
-        ? await handlePolicyUpdate(route.workspaceId, rawBody)
-        : route.type === 'lifecycle-action'
-          ? await handleLifecycleAction(route.workspaceId, rawBody)
-          : route.type === 'audit-log'
-            ? await handleAuditLog(route.workspaceId)
-            : route.type === 'summary'
-              ? await handleSummary(route.workspaceId)
-              : await handleWebhook(route.workspaceId, rawBody, req.headers);
+      let result;
+      switch (route.type) {
+        case 'seat-update':
+          result = await handleSeatUpdate(route.workspaceId, rawBody);
+          break;
+        case 'seat-list':
+          result = await handleSeatList(route.workspaceId);
+          break;
+        case 'policy-update':
+          result = await handlePolicyUpdate(route.workspaceId, rawBody);
+          break;
+        case 'lifecycle-action':
+          result = await handleLifecycleAction(route.workspaceId, rawBody);
+          break;
+        case 'audit-log':
+          result = await handleAuditLog(route.workspaceId);
+          break;
+        case 'summary':
+          result = await handleSummary(route.workspaceId);
+          break;
+        case 'webhook':
+          result = await handleWebhook(route.workspaceId, rawBody, req.headers);
+          break;
+        default:
+          throw new Error(`Internal error: unsupported route type "${route.type}". Expected one of: ${SUPPORTED_ROUTE_TYPES.join(', ')}`);
+      }
 
       res.writeHead(result.statusCode, result.headers);
       res.end(result.body);

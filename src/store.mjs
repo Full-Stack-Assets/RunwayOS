@@ -30,6 +30,17 @@ function createEmptyWorkspace(workspaceId, clock) {
   };
 }
 
+function ensureWorkspaceRecord(workspaces, workspaceId, clock) {
+  const existing = workspaces[workspaceId];
+  if (existing) {
+    return existing;
+  }
+
+  const created = createEmptyWorkspace(workspaceId, clock);
+  workspaces[workspaceId] = created;
+  return created;
+}
+
 function seatKey(employeeEmail, platformName) {
   return `${employeeEmail}::${platformName}`;
 }
@@ -134,11 +145,7 @@ export class JsonRunwayStore {
 
   _ensureWorkspace(workspaceId) {
     this.ensureLoaded();
-    if (!this._db.workspaces[workspaceId]) {
-      this._db.workspaces[workspaceId] = createEmptyWorkspace(workspaceId, this._clock);
-    }
-
-    return this._db.workspaces[workspaceId];
+    return ensureWorkspaceRecord(this._db.workspaces, workspaceId, this._clock);
   }
 
   listSeats(workspaceId) {
@@ -195,8 +202,9 @@ export class JsonRunwayStore {
 
   recordAuditEvent(workspaceId, record) {
     const workspace = this._ensureWorkspace(workspaceId);
+    const { createdAt: _ignoredCreatedAt, ...auditRecord } = record;
     workspace.auditLog.push({
-      ...record,
+      ...auditRecord,
       createdAt: record.createdAt ?? new Date(this._clock()).toISOString()
     });
     workspace.updatedAt = new Date(this._clock()).toISOString();
@@ -265,11 +273,7 @@ export function createInMemoryStore(initialState = createEmptyDatabase()) {
       return Boolean(state.workspaces[workspaceId]?.webhookEvents?.[eventId]);
     },
     recordWebhookEvent(workspaceId, record) {
-      const workspace = state.workspaces[workspaceId] ?? (state.workspaces[workspaceId] = {
-        ...createEmptyWorkspace(workspaceId, clock),
-        auditLog: state.workspaces[workspaceId]?.auditLog ?? [],
-        policies: state.workspaces[workspaceId]?.policies ?? { ...DEFAULT_WORKSPACE_POLICIES }
-      });
+      const workspace = ensureWorkspaceRecord(state.workspaces, workspaceId, clock);
 
       if (workspace.webhookEvents[record.eventId]) {
         throw new ConflictError(`webhook event ${record.eventId} already processed`);
@@ -282,11 +286,7 @@ export function createInMemoryStore(initialState = createEmptyDatabase()) {
       workspace.updatedAt = new Date(clock()).toISOString();
     },
     upsertSeat(workspaceId, seatInput) {
-      const workspace = state.workspaces[workspaceId] ?? (state.workspaces[workspaceId] = {
-        ...createEmptyWorkspace(workspaceId, clock),
-        auditLog: state.workspaces[workspaceId]?.auditLog ?? [],
-        policies: state.workspaces[workspaceId]?.policies ?? { ...DEFAULT_WORKSPACE_POLICIES }
-      });
+      const workspace = ensureWorkspaceRecord(state.workspaces, workspaceId, clock);
       const key = seatKey(seatInput.employeeEmail, seatInput.platformName);
       const now = seatInput.updatedAt ?? new Date(clock()).toISOString();
       const current = workspace.seats[key];
@@ -308,23 +308,16 @@ export function createInMemoryStore(initialState = createEmptyDatabase()) {
       };
     },
     recordAuditEvent(workspaceId, record) {
-      const workspace = state.workspaces[workspaceId] ?? (state.workspaces[workspaceId] = {
-        ...createEmptyWorkspace(workspaceId, clock),
-        auditLog: [],
-        policies: { ...DEFAULT_WORKSPACE_POLICIES }
-      });
+      const workspace = ensureWorkspaceRecord(state.workspaces, workspaceId, clock);
+      const { createdAt: _ignoredCreatedAt, ...auditRecord } = record;
       workspace.auditLog.push({
-        ...record,
+        ...auditRecord,
         createdAt: record.createdAt ?? new Date(clock()).toISOString()
       });
       workspace.updatedAt = new Date(clock()).toISOString();
     },
     updatePolicies(workspaceId, policies) {
-      const workspace = state.workspaces[workspaceId] ?? (state.workspaces[workspaceId] = {
-        ...createEmptyWorkspace(workspaceId, clock),
-        auditLog: [],
-        policies: { ...DEFAULT_WORKSPACE_POLICIES }
-      });
+      const workspace = ensureWorkspaceRecord(state.workspaces, workspaceId, clock);
       workspace.policies = {
         ...DEFAULT_WORKSPACE_POLICIES,
         ...workspace.policies,

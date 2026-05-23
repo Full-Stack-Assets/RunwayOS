@@ -229,7 +229,7 @@ test('workspace policies, audit logs, and persistence recovery work end to end',
         employeeEmail: 'sam.ira@stackaudit.io',
         platformName: 'zoom',
         monthlyCost: 29,
-        currency: 'USD'
+        currency: 'usd'
       })
     });
     assert.equal(approved.status, 200);
@@ -246,7 +246,7 @@ test('workspace policies, audit logs, and persistence recovery work end to end',
         platformName: 'zoom',
         status: 'deactivated',
         monthlyCost: 29,
-        currency: 'USD',
+        currency: 'usd',
         reason: 'provider confirmed deprovisioned'
       })
     });
@@ -269,14 +269,12 @@ test('workspace policies, audit logs, and persistence recovery work end to end',
     const seatsJson = await seats.json();
     assert.equal(seatsJson.seats[0].status, 'deactivated');
 
-    await close();
-
     const recoveredStore = new JsonRunwayStore(dbFile);
     await recoveredStore.load();
     assert.equal(recoveredStore.getSeat('acme', 'sam.ira@stackaudit.io', 'zoom').status, 'deactivated');
     assert.equal(recoveredStore.summarizeWorkspace('acme').recoveredMonthly, 29);
     assert.ok(recoveredStore.listAuditEvents('acme').length >= 3);
   } finally {
-    await close().catch(() => {});
+    await close();
   }
 });

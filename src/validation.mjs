@@ -3,6 +3,11 @@ import { OFFBOARDING_PLATFORM_ENUM, OFFBOARDING_STATUS_ENUM, isOffboardingPlatfo
 import { UnauthorizedError, ValidationError } from './errors.mjs';
 
 const EMAIL_PATTERN = /^(?:[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+|"(?:[^"\\]|\\.)+")@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*$/;
+const SUPPORTED_CURRENCY_CODES = typeof Intl.supportedValuesOf === 'function'
+  ? new Set(Intl.supportedValuesOf('currency').map((code) => code.toUpperCase()))
+  // The fallback is intentionally limited; modern runtimes should use Intl.supportedValuesOf.
+  : new Set(['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD']);
+const DEFAULT_ACTION_ACTOR = 'operator';
 const TIMESTAMP_HEADER_NAMES = ['x-runway-timestamp', 'x-signature-timestamp'];
 const SIGNATURE_HEADER_NAMES = ['x-runway-signature', 'x-signature'];
 const EVENT_ID_HEADER_NAMES = ['x-runway-event-id', 'x-event-id'];
@@ -20,17 +25,35 @@ export function normalizeEmail(email) {
   return normalized;
 }
 
+function normalizeCurrency(value) {
+  return typeof value === 'string' ? value.trim().toUpperCase() : '';
+}
+
+function normalizeNotes(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function rejectUnexpectedProperties(payload, allowedKeys, subject) {
+  for (const key of Object.keys(payload)) {
+    if (!allowedKeys.includes(key)) {
+      throw new ValidationError(`${subject} includes unsupported field: ${key}`);
+    }
+  }
+}
+
 export function validateSeatPayload(payload) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     throw new ValidationError('request body must be a JSON object');
   }
 
+  rejectUnexpectedProperties(payload, ['employeeEmail', 'platformName', 'status', 'monthlyCost', 'currency', 'notes'], 'seat payload');
+
   const employeeEmail = normalizeEmail(payload.employeeEmail);
   const platformName = payload.platformName;
   const status = payload.status;
   const monthlyCost = payload.monthlyCost;
-  const currency = typeof payload.currency === 'string' ? payload.currency.trim().toUpperCase() : '';
-  const notes = typeof payload.notes === 'string' ? payload.notes.trim() : '';
+  const currency = normalizeCurrency(payload.currency);
+  const notes = normalizeNotes(payload.notes);
 
   if (!isOffboardingPlatform(platformName)) {
     throw new ValidationError(`platformName must be one of: ${OFFBOARDING_PLATFORM_ENUM.join(', ')}`);
@@ -44,7 +67,7 @@ export function validateSeatPayload(payload) {
     throw new ValidationError('monthlyCost must be a non-negative number');
   }
 
-  if (currency && !/^[A-Z]{3}$/.test(currency)) {
+  if (currency && !SUPPORTED_CURRENCY_CODES.has(currency)) {
     throw new ValidationError('currency must be an ISO 4217 code');
   }
 
@@ -52,7 +75,7 @@ export function validateSeatPayload(payload) {
     employeeEmail,
     platformName,
     status,
-    monthlyCost: monthlyCost ?? undefined,
+    monthlyCost,
     currency: currency || undefined,
     notes: notes || undefined
   };
@@ -63,12 +86,21 @@ export function validateWebhookPayload(payload) {
     throw new ValidationError('webhook payload must be a JSON object');
   }
 
+  rejectUnexpectedProperties(payload, ['eventId', 'workspaceId', 'employeeEmail', 'platformName', 'status', 'monthlyCost', 'currency', 'notes', 'source'], 'webhook payload');
+
   const eventId = typeof payload.eventId === 'string' ? payload.eventId.trim() : '';
   if (!eventId) {
     throw new ValidationError('webhook payload must include a non-empty eventId');
   }
 
-  const { employeeEmail, platformName, status } = validateSeatPayload(payload);
+  const { employeeEmail, platformName, status, monthlyCost, currency, notes } = validateSeatPayload({
+    employeeEmail: payload.employeeEmail,
+    platformName: payload.platformName,
+    status: payload.status,
+    monthlyCost: payload.monthlyCost,
+    currency: payload.currency,
+    notes: payload.notes
+  });
   const workspaceId = typeof payload.workspaceId === 'string' ? payload.workspaceId.trim() : '';
   if (!workspaceId) {
     throw new ValidationError('webhook payload must include workspaceId');
@@ -80,9 +112,9 @@ export function validateWebhookPayload(payload) {
     employeeEmail,
     platformName,
     status,
-    monthlyCost: payload.monthlyCost,
-    currency: typeof payload.currency === 'string' ? payload.currency.trim().toUpperCase() : '',
-    notes: typeof payload.notes === 'string' ? payload.notes.trim() : '',
+    monthlyCost,
+    currency,
+    notes,
     source: typeof payload.source === 'string' ? payload.source.trim() : 'webhook'
   };
 }
@@ -91,6 +123,8 @@ export function validatePolicyPayload(payload) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     throw new ValidationError('policy payload must be a JSON object');
   }
+
+  rejectUnexpectedProperties(payload, ['approvalRequired', 'autoReconcile', 'manualOverrideEnabled'], 'policy payload');
 
   const policy = {};
   for (const key of ['approvalRequired', 'autoReconcile', 'manualOverrideEnabled']) {
@@ -113,6 +147,8 @@ export function validateLifecycleActionPayload(payload) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     throw new ValidationError('action payload must be a JSON object');
   }
+
+  rejectUnexpectedProperties(payload, ['action', 'actor', 'employeeEmail', 'platformName', 'status', 'monthlyCost', 'currency', 'notes', 'reason'], 'action payload');
 
   const action = typeof payload.action === 'string' ? payload.action.trim() : '';
   if (!['approve', 'reconcile', 'override'].includes(action)) {
@@ -139,28 +175,28 @@ export function validateLifecycleActionPayload(payload) {
     throw new ValidationError('monthlyCost must be a non-negative number');
   }
 
-  const currency = typeof payload.currency === 'string' ? payload.currency.trim().toUpperCase() : '';
-  if (currency && !/^[A-Z]{3}$/.test(currency)) {
+  const currency = normalizeCurrency(payload.currency);
+  if (currency && !SUPPORTED_CURRENCY_CODES.has(currency)) {
     throw new ValidationError('currency must be an ISO 4217 code');
   }
 
-  const notes = typeof payload.notes === 'string' ? payload.notes.trim() : '';
+  const notes = normalizeNotes(payload.notes);
 
-  if (action === 'override' && typeof payload.reason !== 'string' && typeof payload.reason !== 'undefined') {
-    throw new ValidationError('override reason must be a string');
+  if (action === 'override' && (typeof payload.reason !== 'string' || !payload.reason.trim())) {
+    throw new ValidationError('manual overrides require a reason');
   }
 
   const reason = typeof payload.reason === 'string' ? payload.reason.trim() : '';
-  const actor = typeof payload.actor === 'string' ? payload.actor.trim() : 'operator';
+  const actor = typeof payload.actor === 'string' ? payload.actor.trim() : DEFAULT_ACTION_ACTOR;
 
   return {
     action,
-    actor: actor || 'operator',
+    actor,
     reason: reason || undefined,
     employeeEmail,
     platformName,
     status,
-    monthlyCost: monthlyCost ?? undefined,
+    monthlyCost,
     currency: currency || undefined,
     notes: notes || undefined
   };
