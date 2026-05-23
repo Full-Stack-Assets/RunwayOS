@@ -51,6 +51,8 @@ function serializeCsv(rows) {
 }
 
 function compareSeatExportEntries(left, right) {
+  // The store normally persists complete seat records, but this keeps list and export
+  // stable if a workspace contains legacy or manually seeded partial rows.
   const leftEmail = left.employeeEmail ?? '';
   const rightEmail = right.employeeEmail ?? '';
   const emailComparison = leftEmail.localeCompare(rightEmail);
@@ -317,7 +319,7 @@ export function createRunwayApp({ store, webhookSecret, replayWindowSeconds = 30
     const workspace = store.getWorkspace(workspaceId);
     const seats = store.listSeats(workspaceId).sort(compareSeatExportEntries);
     const rows = [
-      // source identifies whether the seat came from api, webhook, or a lifecycle action.
+      // source records the persisted origin label; legacy rows may leave it blank.
       ['workspaceId', 'employeeEmail', 'platformName', 'status', 'source', 'monthlyCost', 'currency', 'notes', 'updatedAt']
     ];
 
