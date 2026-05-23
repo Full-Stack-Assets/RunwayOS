@@ -26,6 +26,7 @@ test('OpenAPI contract keeps the offboarding seat update endpoint', () => {
   const openApi = fs.readFileSync(path.join(root, 'docs', 'openapi-expanded.yaml'), 'utf8');
 
   assert.ok(openApi.includes('/api/workspaces/{id}/offboarding/seats:'));
+  assert.ok(openApi.includes("enum: [slack, google_workspace, github, jira, notion, figma]"));
   assert.ok(openApi.includes("enum: [active, pending_removal, deactivated]"));
   assert.ok(openApi.includes("'200':"));
   assert.ok(openApi.includes("'401':"));

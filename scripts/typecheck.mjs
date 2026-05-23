@@ -16,6 +16,7 @@ const requiredSnippets = [
   'platformName:',
   'status:',
   "enum: [slack, google_workspace, github, jira, notion, figma]",
+  "enum: [active, pending_removal, deactivated]",
   "'200':",
   "'401':",
   "'500':"
