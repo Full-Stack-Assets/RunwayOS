@@ -49,7 +49,7 @@ function csvCell(value) {
 }
 
 function serializeCsv(rows) {
-  return `${rows.map((row) => row.map(csvCell).join(',')).join('\n')}\n`;
+  return rows.map((row) => row.map(csvCell).join(',')).join('\n') + '\n';
 }
 
 function compareSeatExportEntries(left, right) {
@@ -341,7 +341,7 @@ export function createRunwayApp({ store, webhookSecret, replayWindowSeconds = 30
 
     return csvResponse(
       serializeCsv(rows),
-      `runwayos-${workspace?.id ?? workspaceId}-export.csv`
+      `runwayos-${workspaceId}-export.csv`
     );
   }
 
