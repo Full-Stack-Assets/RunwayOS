@@ -91,6 +91,18 @@ paths:
           description: Lifecycle action applied successfully.
         '422':
           description: Validation error.
+  /api/workspaces/{id}/offboarding/export:
+    get:
+      summary: Export a finance-ready CSV of tracked seats
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: CSV export for downstream finance review.
   /api/workspaces/{id}/policies:
     patch:
       summary: Update workspace policy controls

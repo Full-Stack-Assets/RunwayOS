@@ -15,6 +15,7 @@ const SUPPORTED_ROUTE_TYPES = [
   'lifecycle-action',
   'audit-log',
   'summary',
+  'export',
   'webhook'
 ];
 
@@ -24,6 +25,29 @@ function jsonResponse(statusCode, body) {
     headers: { 'content-type': 'application/json; charset=utf-8' },
     body: `${JSON.stringify(body)}\n`
   };
+}
+
+function csvResponse(body, filename) {
+  return {
+    statusCode: 200,
+    headers: {
+      'content-type': 'text/csv; charset=utf-8',
+      'content-disposition': `attachment; filename="${filename}"`
+    },
+    body
+  };
+}
+
+function csvCell(value) {
+  const text = value === null || value === undefined ? '' : String(value);
+  if (/[",\n\r]/.test(text) || /^\s|\s$/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
+function serializeCsv(rows) {
+  return `${rows.map((row) => row.map(csvCell).join(',')).join('\n')}\n`;
 }
 
 async function readRequestBody(req) {
@@ -59,6 +83,10 @@ function routeMatch(url, method) {
 
   if (hasWorkspacePrefix && parts.length === 5 && parts[3] === 'offboarding' && parts[4] === 'actions' && method === 'POST') {
     return { type: 'lifecycle-action', workspaceId: parts[2] };
+  }
+
+  if (hasWorkspacePrefix && parts.length === 5 && parts[3] === 'offboarding' && parts[4] === 'export' && method === 'GET') {
+    return { type: 'export', workspaceId: parts[2] };
   }
 
   if (method === 'PATCH' && hasWorkspacePrefix && parts.length === 5 && parts[3] === 'offboarding' && parts[4] === 'seats') {
@@ -277,6 +305,36 @@ export function createRunwayApp({ store, webhookSecret, replayWindowSeconds = 30
     });
   }
 
+  async function handleExport(workspaceId) {
+    const workspace = store.getWorkspace(workspaceId);
+    const seats = store.listSeats(workspaceId).sort((left, right) => {
+      const emailComparison = left.employeeEmail.localeCompare(right.employeeEmail);
+      return emailComparison !== 0 ? emailComparison : left.platformName.localeCompare(right.platformName);
+    });
+    const rows = [
+      ['workspaceId', 'employeeEmail', 'platformName', 'status', 'source', 'monthlyCost', 'currency', 'notes', 'updatedAt']
+    ];
+
+    for (const seat of seats) {
+      rows.push([
+        workspaceId,
+        seat.employeeEmail,
+        seat.platformName,
+        seat.status,
+        seat.source ?? '',
+        seat.monthlyCost ?? '',
+        seat.currency ?? '',
+        seat.notes ?? '',
+        seat.updatedAt ?? ''
+      ]);
+    }
+
+    return csvResponse(
+      serializeCsv(rows),
+      `runwayos-${workspace?.id ?? workspaceId}-export.csv`
+    );
+  }
+
   async function handleRequest(req, res) {
     try {
       const route = routeMatch(req.url, req.method);
@@ -306,6 +364,9 @@ export function createRunwayApp({ store, webhookSecret, replayWindowSeconds = 30
           break;
         case 'summary':
           result = await handleSummary(route.workspaceId);
+          break;
+        case 'export':
+          result = await handleExport(route.workspaceId);
           break;
         case 'webhook':
           result = await handleWebhook(route.workspaceId, rawBody, req.headers);
