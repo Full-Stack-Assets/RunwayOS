@@ -9,9 +9,14 @@ const dataPath = process.env.RUNWAYOS_DATA_FILE ?? path.join(__dirname, '..', 'd
 const store = new JsonRunwayStore(dataPath);
 await store.load();
 
+const webhookSecret = process.env.RUNWAYOS_WEBHOOK_SECRET;
+if (!webhookSecret && process.env.NODE_ENV === 'production') {
+  throw new Error('RUNWAYOS_WEBHOOK_SECRET is required in production');
+}
+
 const app = createRunwayApp({
   store,
-  webhookSecret: process.env.RUNWAYOS_WEBHOOK_SECRET ?? 'development-webhook-secret',
+  webhookSecret: webhookSecret ?? 'development-webhook-secret',
   replayWindowSeconds: Number(process.env.WEBHOOK_TOLERANCE_SECONDS ?? 300),
   clock: () => Date.now()
 });
@@ -24,4 +29,3 @@ const port = Number(process.env.PORT ?? 8000);
 server.listen(port, () => {
   process.stdout.write(`RunwayOS listening on http://localhost:${port}\n`);
 });
-

@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { createRunwayApp } from '../src/app.mjs';
-import { JsonRunwayStore } from '../src/store.mjs';
+import { createInMemoryStore, JsonRunwayStore } from '../src/store.mjs';
 
 async function startServer(app) {
   const server = http.createServer((req, res) => {
@@ -38,6 +38,7 @@ test('PATCH seat updates persist and unfreeze when deactivated', async () => {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
+        // Mixed casing confirms the handler normalizes seat identity before persistence.
         employeeEmail: 'Alex.Chen@StackAudit.io',
         platformName: 'slack',
         status: 'pending_removal'
@@ -61,6 +62,8 @@ test('PATCH seat updates persist and unfreeze when deactivated', async () => {
     assert.equal(active.status, 200);
     const activeJson = await active.json();
     assert.equal(activeJson.runwayUnfrozen, true);
+    assert.equal(activeJson.seat.status, 'deactivated');
+    assert.equal(activeJson.seat.employeeEmail, 'alex.chen@stackaudit.io');
 
     const persisted = JSON.parse(await fs.readFile(path.join(tmpDir, 'db.json'), 'utf8'));
     assert.equal(persisted.workspaces.acme.seats['alex.chen@stackaudit.io::slack'].status, 'deactivated');
@@ -140,4 +143,38 @@ test('webhook ingestion verifies signatures and deduplicates replayed events', a
   } finally {
     await close();
   }
+});
+
+test('seat status changes control runway freeze state', () => {
+  const store = createInMemoryStore();
+
+  assert.equal(store.upsertSeat('acme', {
+    employeeEmail: 'alex.chen@stackaudit.io',
+    platformName: 'slack',
+    status: 'active'
+  }).runwayFrozen, false);
+
+  assert.equal(store.upsertSeat('acme', {
+    employeeEmail: 'alex.chen@stackaudit.io',
+    platformName: 'slack',
+    status: 'pending_removal'
+  }).runwayFrozen, true);
+
+  assert.equal(store.upsertSeat('acme', {
+    employeeEmail: 'jordan.lee@stackaudit.io',
+    platformName: 'github',
+    status: 'pending_removal'
+  }).runwayFrozen, true);
+
+  assert.equal(store.upsertSeat('acme', {
+    employeeEmail: 'alex.chen@stackaudit.io',
+    platformName: 'slack',
+    status: 'deactivated'
+  }).runwayFrozen, true);
+
+  assert.equal(store.upsertSeat('acme', {
+    employeeEmail: 'jordan.lee@stackaudit.io',
+    platformName: 'github',
+    status: 'deactivated'
+  }).runwayFrozen, false);
 });

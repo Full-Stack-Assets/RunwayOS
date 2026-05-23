@@ -8,4 +8,3 @@ export function isOffboardingPlatform(value) {
 export function isOffboardingStatus(value) {
   return OFFBOARDING_STATUS_ENUM.includes(value);
 }
-

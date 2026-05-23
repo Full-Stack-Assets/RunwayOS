@@ -3,6 +3,8 @@ import path from 'node:path';
 import { OFFBOARDING_STATUS_ENUM } from './domain.mjs';
 import { ConflictError } from './errors.mjs';
 
+const DEFAULT_SAVE_DEBOUNCE_MS = 250;
+
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -20,9 +22,12 @@ function computeRunwayFrozen(seats) {
 }
 
 export class JsonRunwayStore {
-  constructor(filePath) {
+  constructor(filePath, { clock = () => Date.now(), saveDebounceMs = DEFAULT_SAVE_DEBOUNCE_MS } = {}) {
     this.filePath = filePath;
     this._db = null;
+    this._pendingSave = null;
+    this._clock = clock;
+    this._saveDebounceMs = saveDebounceMs;
   }
 
   async load() {
@@ -45,9 +50,24 @@ export class JsonRunwayStore {
       this._db = createEmptyDatabase();
     }
 
-    const tmpPath = `${this.filePath}.tmp`;
-    await fs.writeFile(tmpPath, `${JSON.stringify(this._db, null, 2)}\n`);
-    await fs.rename(tmpPath, this.filePath);
+    if (!this._pendingSave) {
+      this._pendingSave = new Promise((resolve, reject) => {
+        setTimeout(async () => {
+          try {
+            const tmpPath = `${this.filePath}.tmp`;
+            await fs.writeFile(tmpPath, `${JSON.stringify(this._db, null, 2)}\n`);
+            await fs.rename(tmpPath, this.filePath);
+            resolve();
+          } catch (error) {
+            reject(error);
+          } finally {
+            this._pendingSave = null;
+          }
+        }, this._saveDebounceMs);
+      });
+    }
+
+    return this._pendingSave;
   }
 
   ensureLoaded() {
@@ -69,7 +89,7 @@ export class JsonRunwayStore {
         seats: {},
         webhookEvents: {},
         runwayFrozen: false,
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date(this._clock()).toISOString()
       };
     }
 
@@ -98,15 +118,15 @@ export class JsonRunwayStore {
 
     workspace.webhookEvents[record.eventId] = {
       ...record,
-      receivedAt: record.receivedAt ?? new Date().toISOString()
+      receivedAt: record.receivedAt ?? new Date(this._clock()).toISOString()
     };
-    workspace.updatedAt = new Date().toISOString();
+    workspace.updatedAt = new Date(this._clock()).toISOString();
   }
 
   upsertSeat(workspaceId, seatInput) {
     const workspace = this._ensureWorkspace(workspaceId);
     const key = seatKey(seatInput.employeeEmail, seatInput.platformName);
-    const now = seatInput.updatedAt ?? new Date().toISOString();
+    const now = seatInput.updatedAt ?? new Date(this._clock()).toISOString();
     const current = workspace.seats[key];
 
     workspace.seats[key] = {
@@ -142,6 +162,7 @@ export class JsonRunwayStore {
 
 export function createInMemoryStore(initialState = createEmptyDatabase()) {
   const state = clone(initialState);
+  const clock = () => Date.now();
 
   return {
     async load() {},
@@ -162,7 +183,7 @@ export function createInMemoryStore(initialState = createEmptyDatabase()) {
         seats: {},
         webhookEvents: {},
         runwayFrozen: false,
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date(clock()).toISOString()
       });
 
       if (workspace.webhookEvents[record.eventId]) {
@@ -171,9 +192,9 @@ export function createInMemoryStore(initialState = createEmptyDatabase()) {
 
       workspace.webhookEvents[record.eventId] = {
         ...record,
-        receivedAt: record.receivedAt ?? new Date().toISOString()
+        receivedAt: record.receivedAt ?? new Date(clock()).toISOString()
       };
-      workspace.updatedAt = new Date().toISOString();
+      workspace.updatedAt = new Date(clock()).toISOString();
     },
     upsertSeat(workspaceId, seatInput) {
       const workspace = state.workspaces[workspaceId] ?? (state.workspaces[workspaceId] = {
@@ -181,15 +202,16 @@ export function createInMemoryStore(initialState = createEmptyDatabase()) {
         seats: {},
         webhookEvents: {},
         runwayFrozen: false,
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date(clock()).toISOString()
       });
       const key = seatKey(seatInput.employeeEmail, seatInput.platformName);
-      const now = seatInput.updatedAt ?? new Date().toISOString();
+      const now = seatInput.updatedAt ?? new Date(clock()).toISOString();
+      const current = workspace.seats[key];
       workspace.seats[key] = {
         employeeEmail: seatInput.employeeEmail,
         platformName: seatInput.platformName,
         status: seatInput.status,
-        source: seatInput.source ?? 'api',
+        source: seatInput.source ?? current?.source ?? 'api',
         updatedAt: now
       };
       workspace.runwayFrozen = computeRunwayFrozen(workspace.seats);
@@ -218,4 +240,3 @@ export function validateStoreState(store) {
     }
   }
 }
-

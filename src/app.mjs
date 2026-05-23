@@ -20,15 +20,17 @@ async function readRequestBody(req) {
 function routeMatch(url, method) {
   const parsed = new URL(url, 'http://localhost');
   const parts = parsed.pathname.split('/').filter(Boolean);
-  if (method === 'PATCH' && parts.length === 5 && parts[0] === 'api' && parts[1] === 'workspaces' && parts[3] === 'offboarding' && parts[4] === 'seats') {
+  const hasWorkspacePrefix = parts.length >= 3 && parts[0] === 'api' && parts[1] === 'workspaces';
+
+  if (method === 'PATCH' && hasWorkspacePrefix && parts.length === 5 && parts[3] === 'offboarding' && parts[4] === 'seats') {
     return { type: 'seat-update', workspaceId: parts[2] };
   }
 
-  if (method === 'POST' && parts.length === 4 && parts[0] === 'api' && parts[1] === 'workspaces' && parts[3] === 'webhook') {
-    return { type: 'webhook', workspaceId: parts[2] };
-  }
-
-  if (method === 'POST' && parts.length === 5 && parts[0] === 'api' && parts[1] === 'workspaces' && parts[3] === 'offboarding' && parts[4] === 'webhook') {
+  const isWebhookPath = hasWorkspacePrefix && (
+    (parts.length === 4 && parts[3] === 'webhook')
+    || (parts.length === 5 && parts[3] === 'offboarding' && parts[4] === 'webhook')
+  );
+  if (method === 'POST' && isWebhookPath) {
     return { type: 'webhook', workspaceId: parts[2] };
   }
 
@@ -41,10 +43,10 @@ export function createRunwayApp({ store, webhookSecret, replayWindowSeconds = 30
   }
 
   async function handleSeatUpdate(workspaceId, rawBody) {
-    const body = JSON.parse(rawBody.toString('utf8') || '{}');
+    const body = JSON.parse(rawBody.toString('utf8'));
     const seat = validateSeatPayload(body);
     const result = store.upsertSeat(workspaceId, { ...seat, source: 'api' });
-    await store.save?.();
+    await store.save();
 
     return jsonResponse(200, {
       status: 'success',
@@ -64,7 +66,7 @@ export function createRunwayApp({ store, webhookSecret, replayWindowSeconds = 30
       toleranceSeconds: replayWindowSeconds
     });
 
-    const payload = validateWebhookPayload(JSON.parse(rawBody.toString('utf8') || '{}'));
+    const payload = validateWebhookPayload(JSON.parse(rawBody.toString('utf8')));
     if (payload.workspaceId !== workspaceId) {
       throw new ValidationError('payload workspaceId does not match route workspace');
     }
@@ -84,7 +86,7 @@ export function createRunwayApp({ store, webhookSecret, replayWindowSeconds = 30
         status: payload.status,
         source: 'webhook'
       });
-      await store.save?.();
+      await store.save();
     }
 
     const seat = store.getSeat(workspaceId, payload.employeeEmail, payload.platformName);

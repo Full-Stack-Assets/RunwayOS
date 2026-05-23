@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { OFFBOARDING_PLATFORM_ENUM, OFFBOARDING_STATUS_ENUM, isOffboardingPlatform, isOffboardingStatus } from './domain.mjs';
 import { UnauthorizedError, ValidationError } from './errors.mjs';
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMAIL_PATTERN = /^(?:[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+|"(?:[^"\\]|\\.)+")@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*$/;
 const TIMESTAMP_HEADER_NAMES = ['x-runway-timestamp', 'x-signature-timestamp'];
 const SIGNATURE_HEADER_NAMES = ['x-runway-signature', 'x-signature'];
 const EVENT_ID_HEADER_NAMES = ['x-runway-event-id', 'x-event-id'];
@@ -34,7 +34,7 @@ export function validateSeatPayload(payload) {
   }
 
   if (!isOffboardingStatus(status)) {
-    throw new ValidationError('status must be one of active, pending_removal, or deactivated');
+    throw new ValidationError(`status must be one of: ${OFFBOARDING_STATUS_ENUM.join(', ')}`);
   }
 
   return { employeeEmail, platformName, status };
@@ -109,8 +109,8 @@ export function verifyWebhookSignature({ rawBody, headers, secret, now = Date.no
   }
 
   const timestamp = parseReplayTimestamp(headers);
-  const skewMs = Math.abs(now - timestamp * 1000);
-  if (skewMs > toleranceSeconds * 1000) {
+  const skewMilliseconds = now - timestamp * 1000;
+  if (skewMilliseconds < 0 || skewMilliseconds > toleranceSeconds * 1000) {
     throw new UnauthorizedError('signature timestamp outside acceptance window');
   }
 
