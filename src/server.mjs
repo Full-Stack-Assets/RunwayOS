@@ -17,7 +17,12 @@ if (!webhookSecret && process.env.NODE_ENV === 'production') {
 const app = createRunwayApp({
   store,
   webhookSecret: webhookSecret ?? 'development-webhook-secret',
-  replayWindowSeconds: Number(process.env.WEBHOOK_TOLERANCE_SECONDS ?? 300),
+  replayWindowSeconds: Number.isFinite(Number(process.env.WEBHOOK_TOLERANCE_SECONDS))
+    ? Number(process.env.WEBHOOK_TOLERANCE_SECONDS)
+    : 300,
+  maxBodyBytes: Number.isFinite(Number(process.env.RUNWAYOS_MAX_BODY_BYTES))
+    ? Number(process.env.RUNWAYOS_MAX_BODY_BYTES)
+    : 1024 * 1024,
   clock: () => Date.now()
 });
 
@@ -28,4 +33,24 @@ const server = http.createServer((req, res) => {
 const port = Number(process.env.PORT ?? 8000);
 server.listen(port, () => {
   process.stdout.write(`RunwayOS listening on http://localhost:${port}\n`);
+});
+
+let shutdownStarted = false;
+async function shutdown(signal) {
+  if (shutdownStarted) {
+    return;
+  }
+  shutdownStarted = true;
+  process.stdout.write(`RunwayOS shutting down (${signal})...\n`);
+
+  await new Promise((resolve) => server.close(resolve));
+  await store.flush();
+}
+
+process.on('SIGINT', () => {
+  void shutdown('SIGINT');
+});
+
+process.on('SIGTERM', () => {
+  void shutdown('SIGTERM');
 });

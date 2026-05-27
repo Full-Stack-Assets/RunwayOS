@@ -88,8 +88,52 @@ export class JsonRunwayStore {
     this.filePath = filePath;
     this._db = null;
     this._pendingSave = null;
+    this._pendingSaveHandlers = null;
+    this._saveTimer = null;
+    this._commitInFlight = null;
     this._clock = clock;
     this._saveDebounceMs = saveDebounceMs;
+  }
+
+  async _writeDatabaseToDisk() {
+    const tmpPath = `${this.filePath}.tmp`;
+    await fs.writeFile(tmpPath, `${JSON.stringify(this._db, null, 2)}\n`);
+    await fs.rename(tmpPath, this.filePath);
+  }
+
+  async _commitPendingSave() {
+    if (this._commitInFlight) {
+      await this._commitInFlight;
+      return;
+    }
+
+    if (!this._pendingSave || !this._pendingSaveHandlers) {
+      return;
+    }
+
+    const pending = this._pendingSave;
+    const { resolve, reject } = this._pendingSaveHandlers;
+
+    this._commitInFlight = (async () => {
+      if (this._saveTimer) {
+        clearTimeout(this._saveTimer);
+        this._saveTimer = null;
+      }
+
+      try {
+        await this._writeDatabaseToDisk();
+        resolve();
+      } catch (error) {
+        reject(error);
+      } finally {
+        this._pendingSave = null;
+        this._pendingSaveHandlers = null;
+        this._commitInFlight = null;
+      }
+    })();
+
+    await this._commitInFlight;
+    await pending;
   }
 
   async load() {
@@ -103,33 +147,39 @@ export class JsonRunwayStore {
         throw error;
       }
       this._db = createEmptyDatabase();
-      await this.save();
+      await this.save({ immediate: true });
     }
   }
 
-  async save() {
+  async save({ immediate = false } = {}) {
     if (!this._db) {
       this._db = createEmptyDatabase();
     }
 
+    if (immediate) {
+      if (this._pendingSave) {
+        await this.flush();
+        return;
+      }
+
+      await this._writeDatabaseToDisk();
+      return;
+    }
+
     if (!this._pendingSave) {
       this._pendingSave = new Promise((resolve, reject) => {
-        setTimeout(async () => {
-          try {
-            const tmpPath = `${this.filePath}.tmp`;
-            await fs.writeFile(tmpPath, `${JSON.stringify(this._db, null, 2)}\n`);
-            await fs.rename(tmpPath, this.filePath);
-            resolve();
-          } catch (error) {
-            reject(error);
-          } finally {
-            this._pendingSave = null;
-          }
+        this._pendingSaveHandlers = { resolve, reject };
+        this._saveTimer = setTimeout(() => {
+          void this._commitPendingSave();
         }, this._saveDebounceMs);
       });
     }
 
     return this._pendingSave;
+  }
+
+  async flush() {
+    await this._commitPendingSave();
   }
 
   ensureLoaded() {
@@ -262,6 +312,7 @@ export function createInMemoryStore(initialState = createEmptyDatabase()) {
   return {
     async load() {},
     async save() {},
+    async flush() {},
     getWorkspace(workspaceId) {
       return state.workspaces[workspaceId] ?? null;
     },

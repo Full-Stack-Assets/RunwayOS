@@ -65,6 +65,7 @@ test('PATCH seat updates persist and unfreeze when deactivated', async () => {
     assert.equal(activeJson.seat.status, 'deactivated');
     assert.equal(activeJson.seat.employeeEmail, 'alex.chen@stackaudit.io');
 
+    await store.flush();
     const persisted = JSON.parse(await fs.readFile(path.join(tmpDir, 'db.json'), 'utf8'));
     assert.equal(persisted.workspaces.acme.seats['alex.chen@stackaudit.io::slack'].status, 'deactivated');
   } finally {
@@ -269,6 +270,7 @@ test('workspace policies, audit logs, and persistence recovery work end to end',
     const seatsJson = await seats.json();
     assert.equal(seatsJson.seats[0].status, 'deactivated');
 
+    await store.flush();
     const recoveredStore = new JsonRunwayStore(dbFile);
     await recoveredStore.load();
     assert.equal(recoveredStore.getSeat('acme', 'sam.ira@stackaudit.io', 'zoom').status, 'deactivated');

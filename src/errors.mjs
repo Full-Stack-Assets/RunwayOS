@@ -21,3 +21,11 @@ export class ConflictError extends Error {
     this.statusCode = 409;
   }
 }
+
+export class PayloadTooLargeError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'PayloadTooLargeError';
+    this.statusCode = 413;
+  }
+}
