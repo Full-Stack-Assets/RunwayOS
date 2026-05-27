@@ -77,40 +77,29 @@ Create `.env` in the project root:
 
 ```env
 PORT=8000
-DATABASE_URL=your_postgresql_connection_string
-SLACK_SIGNING_SECRET=your_workspace_secret_key
-GUSTO_WEBHOOK_SECRET=your_hr_secret_key
+RUNWAYOS_WEBHOOK_SECRET=your_webhook_signing_secret
+# Optional: override persistence location (defaults to ./data/runwayos.json)
+RUNWAYOS_DATA_FILE=/data/runwayos.json
 ```
 
 Optional (recommended in production):
 ```env
 NODE_ENV=production
 WEBHOOK_TOLERANCE_SECONDS=300
+RUNWAYOS_MAX_BODY_BYTES=1048576
 LOG_LEVEL=info
 ```
 
 ### 3) Install dependencies
-If your stack includes Node + Python services:
-
 ```bash
 npm install
-pip install -r requirements.txt
 ```
 
 ### 4) Run
 Use your project’s start command(s), for example:
 
 ```bash
-npm run dev
-# or
 npm start
-```
-
-If Python workers/webhook processors are separate, run them in a second process:
-
-```bash
-python app.py
-# or your project-specific entrypoint
 ```
 
 ---
@@ -120,10 +109,10 @@ python app.py
 | Variable | Required | Description |
 |---|---:|---|
 | `PORT` | Yes | HTTP port for app/webhook service |
-| `DATABASE_URL` | Yes | Postgres connection string |
-| `SLACK_SIGNING_SECRET` | If Slack enabled | Validates Slack webhook signatures |
-| `GUSTO_WEBHOOK_SECRET` | If Gusto enabled | Validates HR offboarding webhook signatures |
+| `RUNWAYOS_WEBHOOK_SECRET` | Yes (prod) | Validates webhook signatures |
+| `RUNWAYOS_DATA_FILE` | No | Path to the JSON persistence file (defaults to `./data/runwayos.json`) |
 | `WEBHOOK_TOLERANCE_SECONDS` | No | Allowed signature timestamp skew (default `300`) |
+| `RUNWAYOS_MAX_BODY_BYTES` | No | Maximum request body size (default `1048576`) |
 | `LOG_LEVEL` | No | `debug`, `info`, `warn`, `error` |
 
 ---

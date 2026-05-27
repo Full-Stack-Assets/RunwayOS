@@ -1,4 +1,4 @@
-import { ConflictError, UnauthorizedError, ValidationError } from './errors.mjs';
+import { ConflictError, PayloadTooLargeError, UnauthorizedError, ValidationError } from './errors.mjs';
 import {
   parseEventId,
   validateLifecycleActionPayload,
@@ -18,6 +18,7 @@ const SUPPORTED_ROUTE_TYPES = [
   'export',
   'webhook'
 ];
+const DEFAULT_MAX_BODY_BYTES = 1024 * 1024;
 const CSV_SPECIAL_CHARS_PATTERN = /[",\n\r]/;
 const CSV_EDGE_SPACE_PATTERN = /^\s|\s$/;
 
@@ -65,12 +66,19 @@ function compareSeatExportEntries(left, right) {
   return (left.platformName ?? '').localeCompare(right.platformName ?? '');
 }
 
-async function readRequestBody(req) {
+async function readRequestBody(req, { maxBodyBytes = DEFAULT_MAX_BODY_BYTES } = {}) {
   const chunks = [];
+  let totalBytes = 0;
   for await (const chunk of req) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    totalBytes += buffer.length;
+    if (Number.isFinite(maxBodyBytes) && maxBodyBytes > 0 && totalBytes > maxBodyBytes) {
+      req.destroy();
+      throw new PayloadTooLargeError('request body too large');
+    }
+    chunks.push(buffer);
   }
-  return Buffer.concat(chunks);
+  return Buffer.concat(chunks, totalBytes);
 }
 
 function routeMatch(url, method) {
@@ -119,10 +127,33 @@ function routeMatch(url, method) {
   return null;
 }
 
-export function createRunwayApp({ store, webhookSecret, replayWindowSeconds = 300, clock = () => Date.now() }) {
+function queueSave(store) {
+  void store.save().catch((error) => {
+    process.stderr.write(`RunwayOS persistence error: ${error?.message ?? error}\n`);
+  });
+}
+
+function shouldReadBody(routeType) {
+  return ['seat-update', 'policy-update', 'lifecycle-action', 'webhook'].includes(routeType);
+}
+
+export function createRunwayApp({
+  store,
+  webhookSecret,
+  replayWindowSeconds = 300,
+  maxBodyBytes = DEFAULT_MAX_BODY_BYTES,
+  clock = () => Date.now()
+}) {
   if (!store) {
     throw new Error('store is required');
   }
+
+  const effectiveReplayWindowSeconds = Number.isFinite(replayWindowSeconds) && replayWindowSeconds > 0
+    ? replayWindowSeconds
+    : 300;
+  const effectiveMaxBodyBytes = Number.isFinite(maxBodyBytes) && maxBodyBytes > 0
+    ? maxBodyBytes
+    : DEFAULT_MAX_BODY_BYTES;
 
   async function handleSeatUpdate(workspaceId, rawBody) {
     const body = JSON.parse(rawBody.toString('utf8'));
@@ -145,7 +176,7 @@ export function createRunwayApp({ store, webhookSecret, replayWindowSeconds = 30
         notes: seat.notes
       }
     });
-    await store.save();
+    queueSave(store);
 
     return jsonResponse(200, {
       status: 'success',
@@ -175,7 +206,7 @@ export function createRunwayApp({ store, webhookSecret, replayWindowSeconds = 30
       headers,
       secret: webhookSecret,
       now: clock(),
-      toleranceSeconds: replayWindowSeconds
+      toleranceSeconds: effectiveReplayWindowSeconds
     });
 
     const payload = validateWebhookPayload(JSON.parse(rawBody.toString('utf8')));
@@ -207,10 +238,10 @@ export function createRunwayApp({ store, webhookSecret, replayWindowSeconds = 30
         notes: payload.notes,
         source: 'webhook'
       });
-      store.recordAuditEvent(workspaceId, {
-        type: 'webhook_processed',
-        actor: `webhook:${payload.source}`,
-        eventId,
+    store.recordAuditEvent(workspaceId, {
+      type: 'webhook_processed',
+      actor: `webhook:${payload.source}`,
+      eventId,
         employeeEmail: payload.employeeEmail,
         platformName: payload.platformName,
         status: payload.status,
@@ -221,7 +252,7 @@ export function createRunwayApp({ store, webhookSecret, replayWindowSeconds = 30
         },
         runwayFrozen: result.runwayFrozen
       });
-      await store.save();
+      queueSave(store);
     }
 
     const seat = store.getSeat(workspaceId, payload.employeeEmail, payload.platformName);
@@ -245,7 +276,7 @@ export function createRunwayApp({ store, webhookSecret, replayWindowSeconds = 30
       actor: 'api',
       details: updated
     });
-    await store.save();
+    queueSave(store);
     return jsonResponse(200, {
       status: 'success',
       workspaceId,
@@ -291,7 +322,7 @@ export function createRunwayApp({ store, webhookSecret, replayWindowSeconds = 30
         notes: action.notes
       }
     });
-    await store.save();
+    queueSave(store);
     return jsonResponse(200, {
       status: 'success',
       workspaceId,
@@ -353,7 +384,9 @@ export function createRunwayApp({ store, webhookSecret, replayWindowSeconds = 30
         return;
       }
 
-      const rawBody = await readRequestBody(req);
+      const rawBody = shouldReadBody(route.type)
+        ? await readRequestBody(req, { maxBodyBytes: effectiveMaxBodyBytes })
+        : Buffer.alloc(0);
       let result;
       switch (route.type) {
         case 'seat-update':
@@ -395,6 +428,8 @@ export function createRunwayApp({ store, webhookSecret, replayWindowSeconds = 30
 
       if (error instanceof ConflictError) {
         payload.error = 'conflict';
+      } else if (error instanceof PayloadTooLargeError) {
+        payload.error = 'payload_too_large';
       } else if (error instanceof UnauthorizedError) {
         payload.error = 'unauthorized';
       } else if (error instanceof ValidationError) {
